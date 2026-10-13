@@ -1,0 +1,7 @@
+node_modules/
+dist/
+mobile-dist/
+.vite/
+*.log
+kk-growth-record.json
+.DS_Store

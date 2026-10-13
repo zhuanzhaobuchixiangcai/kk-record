@@ -1,0 +1,41 @@
+name: Publish KK Growth Record Mobile Web App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cross-platform-app/package-lock.json
+      - name: Install dependencies
+        working-directory: cross-platform-app
+        run: npm ci --ignore-scripts
+      - name: Build PWA
+        working-directory: cross-platform-app
+        run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: cross-platform-app/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,172 @@
+import { Document, Packer, Paragraph, HeadingLevel, Table, TableCell, TableRow, WidthType, ShadingType, AlignmentType } from 'docx';
+import './styles.css';
+
+const TYPES = {
+  '每日或事件记录': {
+    headers: ['日期', '领域', '发生了什么', '我的判断', '证据/原话', '下一步', '结果'],
+    fields: [
+      ['日期', 'date'], ['领域', 'choice', ['工作', '英语', '金融', '认知', '逻辑', '审美', '健身', '其他']],
+      ['发生了什么', 'long'], ['我的判断', 'long'], ['证据/原话', 'long'], ['下一步', 'long'], ['结果', 'long']
+    ]
+  },
+  '金融认知记录': {
+    headers: ['日期', '主题/材料', '我认为的核心机制', '事实依据', '我的推论', '反例或不确定性', 'AI校正后的表述'],
+    fields: [['日期', 'date'], ['主题/材料', 'long'], ['我认为的核心机制', 'long'], ['事实依据', 'long'], ['我的推论', 'long'], ['反例或不确定性', 'long'], ['AI校正后的表述', 'long']]
+  },
+  '外贸案例记录': {
+    headers: ['日期', '客户阶段', '需求与证据', '我的动作', '客户反应', '复盘结论', '下次实验'],
+    fields: [['日期', 'date'], ['客户阶段', 'choice', ['首次询盘', '已报价', '价格异议', '沉默', '样品', '谈判', '成交', '其他']], ['需求与证据', 'long'], ['我的动作', 'long'], ['客户反应', 'long'], ['复盘结论', 'long'], ['下次实验', 'long']]
+  }
+};
+
+const DB_NAME = 'kk-growth-record';
+const DB_VERSION = 1;
+const STORE = 'records';
+const app = document.querySelector('#app');
+let currentType = '每日或事件记录';
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      const store = db.createObjectStore(STORE, { keyPath: 'id' });
+      store.createIndex('type', 'type');
+      store.createIndex('date', 'date');
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function allRecords() {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE).objectStore(STORE).getAll();
+    request.onsuccess = () => resolve(request.result.sort((a, b) => `${a.date}${a.updatedAt}`.localeCompare(`${b.date}${b.updatedAt}`)));
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function putRecord(record) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, 'readwrite').objectStore(STORE).put(record);
+    request.onsuccess = resolve;
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function deleteRecord(id) {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction(STORE, 'readwrite').objectStore(STORE).delete(id);
+    request.onsuccess = resolve;
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function uid() { return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`; }
+function escapeHtml(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); }
+function today() { return new Date().toISOString().slice(0, 10); }
+
+function render() {
+  const definition = TYPES[currentType];
+  app.innerHTML = `
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand"><h1>KK 成长记录</h1><p>工作、学习与认知的长期数据库</p></div>
+        <div class="side-label">记录类型</div>
+        <nav class="type-nav">${Object.keys(TYPES).map(type => `<button class="type-button ${type === currentType ? 'active' : ''}" data-type="${escapeHtml(type)}">${escapeHtml(type)}</button>`).join('')}</nav>
+        <div class="side-tools"><button class="button" id="export">导出 Word</button><button class="button" id="export-json">导出记录 JSON</button><button class="button" id="import">导入记录 JSON</button><input id="import-file" type="file" accept="application/json" hidden /></div>
+        <div class="muted">数据只保存在当前设备。\n可以导出 JSON 作为备份，也可以导出 Word 进行阅读和归档。</div>
+      </aside>
+      <main class="main">
+        <div class="topbar"><strong>本地数据库</strong><span class="path">记录保存在当前设备的浏览器本地存储中</span></div>
+        <section class="panel">
+          <div class="panel-head"><h2>${escapeHtml(currentType)}</h2><span>保存后可随时导出为 Word</span></div>
+          <form class="form" id="record-form">${definition.fields.map(([label, kind, options]) => fieldHtml(label, kind, options)).join('')}</form>
+          <div class="actions"><div class="message" id="message"></div><div><button class="button" type="button" id="clear">清空</button><button class="button primary" type="button" id="save">保存记录</button></div></div>
+          <div class="records"><h3>已保存记录</h3><div id="record-list"></div></div>
+        </section>
+      </main>
+    </div>`;
+  document.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => { currentType = button.dataset.type; render(); }));
+  document.querySelector('#clear').addEventListener('click', clearForm);
+  document.querySelector('#save').addEventListener('click', saveForm);
+  document.querySelector('#export').addEventListener('click', exportWord);
+  document.querySelector('#export-json').addEventListener('click', exportJson);
+  document.querySelector('#import').addEventListener('click', () => document.querySelector('#import-file').click());
+  document.querySelector('#import-file').addEventListener('change', importJson);
+  loadList();
+}
+
+function fieldHtml(label, kind, options) {
+  const id = `field-${Object.keys(TYPES[currentType].fields).length}-${label}`;
+  if (kind === 'choice') return `<label for="${escapeHtml(id)}">${escapeHtml(label)}</label><select id="${escapeHtml(id)}" data-label="${escapeHtml(label)}">${options.map(option => `<option>${escapeHtml(option)}</option>`).join('')}</select>`;
+  if (kind === 'date') return `<label for="${escapeHtml(id)}">${escapeHtml(label)}</label><input id="${escapeHtml(id)}" data-label="${escapeHtml(label)}" type="date" value="${today()}" />`;
+  return `<label for="${escapeHtml(id)}">${escapeHtml(label)}</label><textarea id="${escapeHtml(id)}" data-label="${escapeHtml(label)}" placeholder="填写${escapeHtml(label)}"></textarea>`;
+}
+
+function formValues() { return TYPES[currentType].fields.map(([label]) => [label, document.querySelector(`[data-label="${CSS.escape(label)}"]`).value.trim()]); }
+function clearForm() { document.querySelector('#record-form').reset(); document.querySelector('[type=date]').value = today(); }
+
+async function saveForm() {
+  const pairs = formValues();
+  const values = Object.fromEntries(pairs);
+  const message = document.querySelector('#message');
+  if (!values['日期'] || !pairs.slice(1).some(([, value]) => value)) { message.textContent = '请填写日期，并至少填写一项内容。'; message.className = 'message error'; return; }
+  const record = { id: uid(), type: currentType, date: values['日期'], values, updatedAt: new Date().toISOString() };
+  await putRecord(record);
+  message.textContent = '已保存到本地数据库。'; message.className = 'message';
+  clearForm();
+  await loadList();
+}
+
+async function loadList() {
+  const list = document.querySelector('#record-list');
+  if (!list) return;
+  const records = (await allRecords()).filter(record => record.type === currentType).reverse();
+  if (!records.length) { list.innerHTML = '<div class="empty">还没有记录。</div>'; return; }
+  const headers = TYPES[currentType].headers;
+  list.innerHTML = `<table><thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}<th>操作</th></tr></thead><tbody>${records.map(record => `<tr>${headers.map(header => `<td>${escapeHtml(record.values[header])}</td>`).join('')}<td><button class="button danger" data-delete="${record.id}">删除</button></td></tr>`).join('')}</tbody></table>`;
+  list.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', async () => { if (confirm('确定删除这条记录吗？')) { await deleteRecord(button.dataset.delete); loadList(); } }));
+}
+
+function paragraph(text, bold = false) { return new Paragraph({ children: [{ text: text || '', bold }], spacing: { after: 80 } }); }
+function wordCell(text, header = false) { return new TableCell({ shading: header ? { fill: '2F5597', type: ShadingType.CLEAR } : undefined, children: [new Paragraph({ alignment: AlignmentType.LEFT, children: [{ text: text || '', bold: header, color: header ? 'FFFFFF' : '000000', size: header ? 18 : 16 }] })] }); }
+function wordTable(headers, records) {
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ tableHeader: true, children: headers.map(header => wordCell(header, true)) }), ...records.map(record => new TableRow({ cantSplit: true, children: headers.map(header => wordCell(record.values[header] || '')) }))] });
+}
+
+async function exportWord() {
+  const records = await allRecords();
+  const children = [new Paragraph({ text: 'KK个人成长记录', heading: HeadingLevel.TITLE }), paragraph(`导出时间：${new Date().toLocaleString('zh-CN')}`), paragraph('记录保存在当前设备本地数据库中；本文件是当前数据的 Word 导出副本。')];
+  for (const type of Object.keys(TYPES)) {
+    const typeRecords = records.filter(record => record.type === type).sort((a, b) => a.date.localeCompare(b.date));
+    children.push(new Paragraph({ text: type, heading: HeadingLevel.HEADING_1 }));
+    children.push(typeRecords.length ? wordTable(TYPES[type].headers, typeRecords) : paragraph('暂无记录。'));
+  }
+  const blob = await Packer.toBlob(new Document({ sections: [{ properties: {}, children }] }));
+  downloadBlob(blob, `KK成长记录_${today()}.docx`);
+}
+
+function downloadBlob(blob, filename) { const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000); }
+
+async function exportJson() {
+  const records = await allRecords();
+  downloadBlob(new Blob([JSON.stringify(records, null, 2)], { type: 'application/json' }), `KK成长记录_${today()}.json`);
+}
+
+async function importJson(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const records = JSON.parse(await file.text());
+  for (const record of records) { if (record.id && record.type && record.values) await putRecord(record); }
+  await loadList();
+  document.querySelector('#message').textContent = 'JSON 记录已合并到本地数据库。';
+  event.target.value = '';
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+render();
