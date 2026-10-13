@@ -1,9 +1,10 @@
-import { Document, Packer, Paragraph, HeadingLevel, Table, TableCell, TableRow, WidthType, ShadingType, AlignmentType } from 'docx';
+import { Document, Packer, Paragraph, HeadingLevel, Table, TableCell, TableRow, WidthType, TableLayoutType, ShadingType, AlignmentType } from 'docx';
 import './styles.css';
 
 const TYPES = {
   '每日或事件记录': {
     headers: ['日期', '领域', '发生了什么', '我的判断', '证据/原话', '下一步', '结果'],
+    columnWidths: [900, 1000, 1600, 1500, 1650, 1400, 1310],
     fields: [
       ['日期', 'date'], ['领域', 'choice', ['工作', '英语', '金融', '认知', '逻辑', '审美', '健身', '其他']],
       ['发生了什么', 'long'], ['我的判断', 'long'], ['证据/原话', 'long'], ['下一步', 'long'], ['结果', 'long']
@@ -11,10 +12,12 @@ const TYPES = {
   },
   '金融认知记录': {
     headers: ['日期', '主题/材料', '我认为的核心机制', '事实依据', '我的推论', '反例或不确定性', 'AI校正后的表述'],
+    columnWidths: [900, 1300, 1500, 1250, 1350, 1550, 1510],
     fields: [['日期', 'date'], ['主题/材料', 'long'], ['我认为的核心机制', 'long'], ['事实依据', 'long'], ['我的推论', 'long'], ['反例或不确定性', 'long'], ['AI校正后的表述', 'long']]
   },
   '外贸案例记录': {
     headers: ['日期', '客户阶段', '需求与证据', '我的动作', '客户反应', '复盘结论', '下次实验'],
+    columnWidths: [900, 1200, 1600, 1450, 1250, 1450, 1510],
     fields: [['日期', 'date'], ['客户阶段', 'choice', ['首次询盘', '已报价', '价格异议', '沉默', '样品', '谈判', '成交', '其他']], ['需求与证据', 'long'], ['我的动作', 'long'], ['客户反应', 'long'], ['复盘结论', 'long'], ['下次实验', 'long']]
   }
 };
@@ -86,7 +89,7 @@ function render() {
         <section class="panel">
           <div class="panel-head"><h2>${escapeHtml(currentType)}</h2><span>保存后可随时导出为 Word</span></div>
           <form class="form" id="record-form">${definition.fields.map(([label, kind, options]) => fieldHtml(label, kind, options)).join('')}</form>
-          <div class="actions"><div class="message" id="message"></div><div><button class="button" type="button" id="clear">清空</button><button class="button primary" type="button" id="save">保存记录</button></div></div>
+          <div class="actions"><div class="message" id="message"></div><div class="action-buttons"><button class="button" type="button" id="clear">清空</button><button class="button primary" type="button" id="save">保存记录</button></div></div>
           <div class="records"><h3>已保存记录</h3><div id="record-list"></div></div>
         </section>
       </main>
@@ -144,9 +147,9 @@ async function loadList() {
 }
 
 function paragraph(text, bold = false) { return new Paragraph({ children: [{ text: text || '', bold }], spacing: { after: 80 } }); }
-function wordCell(text, header = false) { return new TableCell({ shading: header ? { fill: '2F5597', type: ShadingType.CLEAR } : undefined, children: [new Paragraph({ alignment: AlignmentType.LEFT, children: [{ text: text || '', bold: header, color: header ? 'FFFFFF' : '000000', size: header ? 18 : 16 }] })] }); }
-function wordTable(headers, records) {
-  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [new TableRow({ tableHeader: true, children: headers.map(header => wordCell(header, true)) }), ...records.map(record => new TableRow({ cantSplit: true, children: headers.map(header => wordCell(record.values[header] || '')) }))] });
+function wordCell(text, width, header = false) { return new TableCell({ width: { size: width, type: WidthType.DXA }, margins: { top: 80, bottom: 80, left: 80, right: 80 }, shading: header ? { fill: '2F5597', type: ShadingType.CLEAR } : undefined, children: [new Paragraph({ alignment: AlignmentType.LEFT, spacing: { before: 0, after: 0 }, children: [{ text: text || '', bold: header, color: header ? 'FFFFFF' : '000000', size: 18 }] })] }); }
+function wordTable(headers, records, columnWidths) {
+  return new Table({ layout: TableLayoutType.FIXED, width: { size: 9360, type: WidthType.DXA }, columnWidths, rows: [new TableRow({ tableHeader: true, children: headers.map((header, index) => wordCell(header, columnWidths[index], true)) }), ...records.map(record => new TableRow({ children: headers.map((header, index) => wordCell(record.values[header] || '', columnWidths[index])) }))] });
 }
 
 async function exportWord() {
@@ -159,7 +162,7 @@ async function exportWord() {
   for (const type of Object.keys(TYPES)) {
     const typeRecords = records.filter(record => record.type === type).sort((a, b) => a.date.localeCompare(b.date));
     children.push(new Paragraph({ text: type, heading: HeadingLevel.HEADING_1 }));
-    children.push(typeRecords.length ? wordTable(TYPES[type].headers, typeRecords) : paragraph('暂无记录。'));
+    children.push(typeRecords.length ? wordTable(TYPES[type].headers, typeRecords, TYPES[type].columnWidths) : paragraph('暂无记录。'));
   }
   const blob = await Packer.toBlob(new Document({ sections: [{ properties: {}, children }] }));
   downloadBlob(blob, `KK成长记录_${today()}.docx`);

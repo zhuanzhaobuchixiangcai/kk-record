@@ -14,7 +14,8 @@
     "package:dir:separate": "electron-builder --dir --config.directories.output=desktop-dist --publish never",
     "self-test": "node tests/self-test.mjs",
     "package:win": "npm run build && electron-builder --win portable",
-    "package:win:separate": "electron-builder --win portable --config.directories.output=desktop-dist --publish never"
+    "package:win:separate": "electron-builder --win portable --config.directories.output=desktop-dist --publish never",
+    "package:win:recovery": "electron-builder --win portable --config.directories.output=desktop-dist-fixed --publish never"
   },
   "dependencies": {
     "@xmldom/xmldom": "^0.8.15",
