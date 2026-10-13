@@ -17,7 +17,7 @@
 - `Build KK Growth Record`：手动运行或推送 `v*` 标签时，生成 Windows `.exe` 和手机端网站构建产物。
 - `Publish KK Growth Record Mobile Web App`：推送到 `main` 后发布 GitHub Pages，手机打开页面后可添加到主屏幕。
 
-仓库需要把 `cross-platform-app` 作为项目目录，GitHub Pages 的 source 选择 GitHub Actions。网站端数据仍保存在手机本地，JSON 导出/导入用于手机和电脑之间合并记录。
+GitHub Pages 的 source 选择 GitHub Actions。网站端数据仍保存在手机本地，JSON 导出/导入用于手机和电脑之间合并记录。
 
 ## 运行
 

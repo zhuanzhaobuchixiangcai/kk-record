@@ -18,12 +18,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cross-platform-app/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
-        working-directory: cross-platform-app
         run: npm ci --ignore-scripts
       - name: Build and package Windows app
-        working-directory: cross-platform-app
         env:
           ELECTRON_MIRROR: https://npmmirror.com/mirrors/electron/
         run: npm run package:win -- --publish never
@@ -31,7 +29,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: KK成长记录-Windows
-          path: cross-platform-app/dist/*.exe
+          path: dist/*.exe
           if-no-files-found: error
 
   web:
@@ -42,15 +40,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: cross-platform-app/package-lock.json
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
-        working-directory: cross-platform-app
         run: npm ci --ignore-scripts
       - name: Build mobile PWA
-        working-directory: cross-platform-app
         run: npm run build
       - name: Upload mobile website
         uses: actions/upload-artifact@v4
         with:
           name: KK成长记录-手机端网站
-          path: cross-platform-app/dist
+          path: dist
