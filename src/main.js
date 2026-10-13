@@ -78,7 +78,7 @@ function render() {
         <div class="brand"><h1>KK 成长记录</h1><p>工作、学习与认知的长期数据库</p></div>
         <div class="side-label">记录类型</div>
         <nav class="type-nav">${Object.keys(TYPES).map(type => `<button class="type-button ${type === currentType ? 'active' : ''}" data-type="${escapeHtml(type)}">${escapeHtml(type)}</button>`).join('')}</nav>
-        <div class="side-tools"><button class="button" id="choose-word">选择 Word 文档</button><button class="button" id="export">打开 Word 文档</button><button class="button" id="export-json">导出记录 JSON</button><button class="button" id="import">导入记录 JSON</button><input id="import-file" type="file" accept="application/json" hidden /></div>
+        <div class="side-tools"><button class="button" id="choose-word" ${window.kkDesktop ? '' : 'hidden'}>选择 Word 文档</button><button class="button" id="export">${window.kkDesktop ? '打开 Word 文档' : '导出 Word 文档'}</button><button class="button" id="export-json">导出记录 JSON</button><button class="button" id="import">导入记录 JSON</button><input id="import-file" type="file" accept="application/json" hidden /></div>
         <div class="muted">电脑端保存会直接写入 KK个人成长系统.docx，并先自动备份。手机端保存到本地，导出 JSON 后在电脑端导入。</div>
       </aside>
       <main class="main">

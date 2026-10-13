@@ -45,7 +45,9 @@ textarea { min-height: 72px; resize: vertical; line-height: 1.5; }
   .sidebar { padding: 16px 12px 12px; }
   .brand { padding: 0 8px 12px; }
   .brand h1 { font-size: 18px; }
-  .side-label, .muted, .side-tools { display: none; }
+  .side-label, .muted { display: none; }
+  .side-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 12px; padding-top: 12px; }
+  .side-tools button { margin: 0; padding: 9px 6px; font-size: 12px; }
   .type-nav { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
   .type-button { padding: 9px 6px; text-align: center; font-size: 12px; margin: 0; }
   .main { padding: 10px; }
