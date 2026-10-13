@@ -78,11 +78,11 @@ function render() {
         <div class="brand"><h1>KK 成长记录</h1><p>工作、学习与认知的长期数据库</p></div>
         <div class="side-label">记录类型</div>
         <nav class="type-nav">${Object.keys(TYPES).map(type => `<button class="type-button ${type === currentType ? 'active' : ''}" data-type="${escapeHtml(type)}">${escapeHtml(type)}</button>`).join('')}</nav>
-        <div class="side-tools"><button class="button" id="export">导出 Word</button><button class="button" id="export-json">导出记录 JSON</button><button class="button" id="import">导入记录 JSON</button><input id="import-file" type="file" accept="application/json" hidden /></div>
-        <div class="muted">数据只保存在当前设备。\n可以导出 JSON 作为备份，也可以导出 Word 进行阅读和归档。</div>
+        <div class="side-tools"><button class="button" id="choose-word">选择 Word 文档</button><button class="button" id="export">打开 Word 文档</button><button class="button" id="export-json">导出记录 JSON</button><button class="button" id="import">导入记录 JSON</button><input id="import-file" type="file" accept="application/json" hidden /></div>
+        <div class="muted">电脑端保存会直接写入 KK个人成长系统.docx，并先自动备份。手机端保存到本地，导出 JSON 后在电脑端导入。</div>
       </aside>
       <main class="main">
-        <div class="topbar"><strong>本地数据库</strong><span class="path">记录保存在当前设备的浏览器本地存储中</span></div>
+        <div class="topbar"><strong id="storage-title">本地记录</strong><span class="path" id="storage-path">手机端保存在本地；电脑端可直接写入 Word</span></div>
         <section class="panel">
           <div class="panel-head"><h2>${escapeHtml(currentType)}</h2><span>保存后可随时导出为 Word</span></div>
           <form class="form" id="record-form">${definition.fields.map(([label, kind, options]) => fieldHtml(label, kind, options)).join('')}</form>
@@ -95,9 +95,11 @@ function render() {
   document.querySelector('#clear').addEventListener('click', clearForm);
   document.querySelector('#save').addEventListener('click', saveForm);
   document.querySelector('#export').addEventListener('click', exportWord);
+  document.querySelector('#choose-word').addEventListener('click', chooseWord);
   document.querySelector('#export-json').addEventListener('click', exportJson);
   document.querySelector('#import').addEventListener('click', () => document.querySelector('#import-file').click());
   document.querySelector('#import-file').addEventListener('change', importJson);
+  refreshDesktopStatus();
   loadList();
 }
 
@@ -117,8 +119,16 @@ async function saveForm() {
   const message = document.querySelector('#message');
   if (!values['日期'] || !pairs.slice(1).some(([, value]) => value)) { message.textContent = '请填写日期，并至少填写一项内容。'; message.className = 'message error'; return; }
   const record = { id: uid(), type: currentType, date: values['日期'], values, updatedAt: new Date().toISOString() };
-  await putRecord(record);
-  message.textContent = '已保存到本地数据库。'; message.className = 'message';
+  try {
+    const result = window.kkDesktop ? await window.kkDesktop.saveRecord(record) : null;
+    await putRecord(record);
+    message.textContent = result ? `已直接写入 Word（新增 ${result.added} 条，已备份原文件）。` : '已保存到本地数据库。';
+    message.className = 'message';
+  } catch (error) {
+    message.textContent = `保存失败：${error.message || error}`;
+    message.className = 'message error';
+    return;
+  }
   clearForm();
   await loadList();
 }
@@ -140,6 +150,10 @@ function wordTable(headers, records) {
 }
 
 async function exportWord() {
+  if (window.kkDesktop) {
+    try { await window.kkDesktop.openWord(); } catch (error) { document.querySelector('#message').textContent = `打开 Word 失败：${error.message || error}`; }
+    return;
+  }
   const records = await allRecords();
   const children = [new Paragraph({ text: 'KK个人成长记录', heading: HeadingLevel.TITLE }), paragraph(`导出时间：${new Date().toLocaleString('zh-CN')}`), paragraph('记录保存在当前设备本地数据库中；本文件是当前数据的 Word 导出副本。')];
   for (const type of Object.keys(TYPES)) {
@@ -162,10 +176,26 @@ async function importJson(event) {
   const file = event.target.files[0];
   if (!file) return;
   const records = JSON.parse(await file.text());
-  for (const record of records) { if (record.id && record.type && record.values) await putRecord(record); }
+  const valid = records.filter(record => record.id && record.type && record.values);
+  let result = null;
+  if (window.kkDesktop) result = await window.kkDesktop.mergeRecords(valid);
+  for (const record of valid) await putRecord(record);
   await loadList();
-  document.querySelector('#message').textContent = 'JSON 记录已合并到本地数据库。';
+  document.querySelector('#message').textContent = result ? `JSON 已合并到 Word：新增 ${result.added} 条，跳过 ${result.skipped} 条。` : 'JSON 记录已合并到本地数据库。';
   event.target.value = '';
+}
+
+async function chooseWord() {
+  if (!window.kkDesktop) { document.querySelector('#message').textContent = '手机端不能选择电脑本地 Word，请在电脑 App 中操作。'; return; }
+  const result = await window.kkDesktop.chooseWord();
+  if (!result.canceled) refreshDesktopStatus();
+}
+
+async function refreshDesktopStatus() {
+  if (!window.kkDesktop) return;
+  const status = await window.kkDesktop.getWordStatus();
+  document.querySelector('#storage-title').textContent = status.exists ? 'Word 主文档已连接' : '尚未连接 Word';
+  document.querySelector('#storage-path').textContent = status.path || '请点击左侧“选择 Word 文档”';
 }
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
