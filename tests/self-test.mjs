@@ -16,7 +16,7 @@ assert.match(source, /localeCompare/);
 
 const headers = ['日期', '领域', '发生了什么', '我的判断', '证据/原话', '下一步', '结果'];
 const row = (values) => new TableRow({ children: values.map(value => new TableCell({ children: [new Paragraph(value)] })) });
-const fixture = new Document({ sections: [{ children: [new Table(headers.map(h => row([h])))] }] });
+const fixture = new Document({ sections: [{ children: [new Table({ rows: [row(headers), row(headers.map(() => '[填写]'))] })] }] });
 const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'kk-self-test-'));
 const docPath = path.join(tempDir, 'KK个人成长系统.docx');
 await fs.writeFile(docPath, await Packer.toBuffer(fixture));
