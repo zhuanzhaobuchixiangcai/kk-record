@@ -38,6 +38,13 @@ npm run package:dir
 npm run package:win
 ```
 
+手机端和电脑端分开打包时，使用下面的命令。电脑端会输出到 `desktop-dist`，不会覆盖 `dist` 中的手机端文件：
+
+```powershell
+npm run package:dir:separate
+npm run package:win:separate
+```
+
 首次打包会下载 Electron Windows 运行时，生成文件在 `dist` 目录中。首次使用在左侧选择 `KK个人成长系统.docx`；之后保存会直接写入该文件。
 
 手机测试时，让手机和电脑连接同一个局域网，然后运行：
