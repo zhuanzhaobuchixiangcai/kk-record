@@ -1,6 +1,12 @@
 const CACHE = 'kk-growth-record-v1';
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(['/', '/index.html', '/manifest.webmanifest', '/icon.svg'])));
+  const base = self.registration.scope;
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll([
+    base,
+    `${base}index.html`,
+    `${base}manifest.webmanifest`,
+    `${base}icon.svg`
+  ])));
   self.skipWaiting();
 });
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));

@@ -198,5 +198,7 @@ async function refreshDesktopStatus() {
   document.querySelector('#storage-path').textContent = status.path || '请点击左侧“选择 Word 文档”';
 }
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {});
+}
 render();
