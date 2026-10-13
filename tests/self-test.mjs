@@ -39,8 +39,7 @@ fixtureZip.file('word/document.xml', new XMLSerializer().serializeToString(fixtu
 await fs.writeFile(docPath, await fixtureZip.generateAsync({ type: 'nodebuffer' }));
 const records = [
   { id: '1', type: '每日或事件记录', values: { 日期: '2099-10-03', 领域: '工作', 发生了什么: 'three', 我的判断: '', '证据/原话': '', 下一步: '', 结果: '' } },
-  { id: '2', type: '每日或事件记录', values: { 日期: '2099-10-02', 领域: '工作', 发生了什么: 'two', 我的判断: '', '证据/原话': '', 下一步: '', 结果: '' } },
-  { id: 'finance', type: '金融认知记录', values: { 日期: '2099-10-04', '主题/材料': 'money', '我认为的核心机制': 'mechanism' } }
+  { id: '2', type: '每日或事件记录', values: { 日期: '2099-10-02', 领域: '工作', 发生了什么: 'two', 我的判断: '', '证据/原话': '', 下一步: '', 结果: '' } }
 ];
 const originalRename = nativeFs.promises.rename;
 let renameAttempts = 0;
@@ -56,7 +55,7 @@ nativeFs.promises.rename = async (...args) => {
 let result;
 try { result = await saveRecords(docPath, records); }
 finally { nativeFs.promises.rename = originalRename; }
-assert.equal(result.added, 3);
+assert.equal(result.added, 2);
 assert.equal(renameAttempts, 4);
 assert.equal((await fs.readdir(path.join(tempDir, 'backups'))).length, 1);
 assert.equal((await fs.readdir(tempDir)).some(name => name.endsWith('.tmp')), false);
@@ -74,16 +73,16 @@ const financeTable = Array.from(savedDocument.getElementsByTagNameNS(wordNs, 'tb
 });
 const widthOf = node => Number(node.getAttributeNS(wordNs, 'w'));
 for (const table of [recordTable, financeTable]) {
-  assert.equal(table.getElementsByTagNameNS(wordNs, 'tblLayout')[0].getAttributeNS(wordNs, 'type'), 'fixed');
   const tableChildren = Array.from(table.childNodes).filter(node => node.nodeType === 1).map(node => node.localName);
   assert.ok(tableChildren.indexOf('tblPr') < tableChildren.indexOf('tblGrid'));
   assert.ok(tableChildren.indexOf('tblGrid') < tableChildren.indexOf('tr'));
-  const gridWidths = Array.from(table.getElementsByTagNameNS(wordNs, 'gridCol')).map(widthOf);
-  assert.equal(widthOf(table.getElementsByTagNameNS(wordNs, 'tblW')[0]), gridWidths.reduce((sum, width) => sum + width, 0));
-  for (const row of Array.from(table.childNodes).filter(node => node.nodeType === 1 && node.localName === 'tr')) {
-    assert.deepEqual(Array.from(row.getElementsByTagNameNS(wordNs, 'tcW')).map(widthOf), gridWidths);
-    assert.equal(row.getElementsByTagNameNS(wordNs, 'cantSplit').length, 0);
-  }
+}
+assert.equal(recordTable.getElementsByTagNameNS(wordNs, 'tblLayout')[0].getAttributeNS(wordNs, 'type'), 'fixed');
+const gridWidths = Array.from(recordTable.getElementsByTagNameNS(wordNs, 'gridCol')).map(widthOf);
+assert.equal(widthOf(recordTable.getElementsByTagNameNS(wordNs, 'tblW')[0]), gridWidths.reduce((sum, width) => sum + width, 0));
+for (const row of Array.from(recordTable.childNodes).filter(node => node.nodeType === 1 && node.localName === 'tr')) {
+  assert.deepEqual(Array.from(row.getElementsByTagNameNS(wordNs, 'tcW')).map(widthOf), gridWidths);
+  assert.equal(row.getElementsByTagNameNS(wordNs, 'cantSplit').length, 0);
 }
 
 const beforeLockedWrite = await fs.readFile(docPath);

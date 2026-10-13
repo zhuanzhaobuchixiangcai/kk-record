@@ -44,6 +44,16 @@ function setWidth(node, width, withType = true) {
   if (withType) node.setAttribute(q('type'), 'dxa');
 }
 
+function normalizeTableOrder(table) {
+  const properties = firstChild(table, 'tblPr');
+  const grid = firstChild(table, 'tblGrid');
+  if (properties && table.firstChild !== properties) table.insertBefore(properties, table.firstChild);
+  if (grid) {
+    const following = properties ? properties.nextSibling : table.firstChild;
+    if (following !== grid) table.insertBefore(grid, following || null);
+  }
+}
+
 function setFixedTableLayout(table) {
   const rows = Array.from(table.childNodes || []).filter((node) => node.nodeType === 1 && node.nodeName === q('tr'));
   const count = rowCells(rows[0] || {}).length;
@@ -152,6 +162,7 @@ function replaceRows(table, rows) {
   if (anchor) table.insertBefore(rows[0], anchor.nextSibling);
   else rows.forEach((row) => table.appendChild(row));
   rows.slice(1).forEach((row) => table.appendChild(row));
+  normalizeTableOrder(table);
 }
 
 async function readIndex(docPath) {
@@ -227,6 +238,7 @@ async function saveRecords(docPath, records) {
     index.signatures[sig] = id;
   }
   if (!grouped.size) return { added: 0, skipped: records.length, backup: null, path: resolved };
+  Array.from(document.getElementsByTagName(q('tbl'))).forEach(normalizeTableOrder);
   let added = 0;
   for (const [type, incoming] of grouped) {
     const headers = TABLES[type];
