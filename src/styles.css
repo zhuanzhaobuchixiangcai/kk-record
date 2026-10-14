@@ -37,10 +37,12 @@ textarea { min-height: 72px; resize: vertical; line-height: 1.5; }
 .button.danger { color: #a43636; background: #fff0f0; }
 .message { min-width: 0; height: 44px; color: #2d7a52; font-size: 12px; line-height: 1.6; overflow: auto; overflow-wrap: anywhere; }
 .message.error { color: #b64242; }
-.records { margin-top: 16px; }
+.records { margin-top: 16px; overflow-x: auto; }
 .records table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .records th, .records td { border-bottom: 1px solid #e1e7ef; padding: 9px 6px; text-align: left; vertical-align: top; }
 .records th { color: #61718a; font-weight: 700; }
+.record-actions { display: flex; gap: 5px; white-space: nowrap; }
+.record-actions .button { padding: 6px 9px; }
 .empty { color: #8a96a8; padding: 15px 0; font-size: 13px; }
 @media (max-width: 720px) {
   .shell { display: block; }

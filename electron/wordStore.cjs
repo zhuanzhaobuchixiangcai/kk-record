@@ -13,7 +13,18 @@ const TABLES = {
 };
 
 const q = (name) => `w:${name}`;
-const textOf = (node) => Array.from(node.getElementsByTagName(q('t'))).map((item) => item.textContent || '').join('');
+function textOf(node) {
+  const parts = [];
+  const visit = (current) => Array.from(current.childNodes || []).forEach((child) => {
+    if (child.nodeType !== 1) return;
+    if (child.nodeName === q('t')) parts.push(child.textContent || '');
+    else if (child.nodeName === q('br')) parts.push('\n');
+    else if (child.nodeName === q('tab')) parts.push('\t');
+    else visit(child);
+  });
+  visit(node);
+  return parts.join('');
+}
 const rowCells = (row) => Array.from(row.childNodes || []).filter((node) => node.nodeType === 1 && node.nodeName === q('tc'));
 const rowValues = (row) => rowCells(row).map(textOf);
 const isPlaceholder = (values) => values.every((value) => !value.trim() || /^\[|^_+$/.test(value.trim()));
@@ -22,6 +33,42 @@ const signature = (record) => crypto.createHash('sha256').update(canonical(recor
 
 function clone(node) {
   return node.cloneNode(true);
+}
+
+function bookmarkName(id) {
+  return `kk_${crypto.createHash('sha256').update(String(id)).digest('hex').slice(0, 32)}`;
+}
+
+function rowHasRecordId(row, id) {
+  const name = bookmarkName(id);
+  return Array.from(row.getElementsByTagName(q('bookmarkStart'))).some((node) => node.getAttribute(q('name')) === name);
+}
+
+function removeRecordBookmark(row) {
+  const starts = Array.from(row.getElementsByTagName(q('bookmarkStart'))).filter((node) => (node.getAttribute(q('name')) || '').startsWith('kk_'));
+  const ids = new Set(starts.map((node) => node.getAttribute(q('id'))));
+  starts.forEach((node) => node.parentNode.removeChild(node));
+  Array.from(row.getElementsByTagName(q('bookmarkEnd'))).filter((node) => ids.has(node.getAttribute(q('id')))).forEach((node) => node.parentNode.removeChild(node));
+}
+
+function ensureRecordBookmark(document, row, id) {
+  if (rowHasRecordId(row, id)) return;
+  const paragraph = firstChild(rowCells(row)[0], 'p');
+  if (!paragraph) return;
+  const starts = Array.from(document.getElementsByTagName(q('bookmarkStart')));
+  const nextId = starts.reduce((max, node) => Math.max(max, Number(node.getAttribute(q('id')) || 0)), 0) + 1;
+  const start = document.createElement(q('bookmarkStart'));
+  start.setAttribute(q('id'), String(nextId));
+  start.setAttribute(q('name'), bookmarkName(id));
+  const end = document.createElement(q('bookmarkEnd'));
+  end.setAttribute(q('id'), String(nextId));
+  const properties = firstChild(paragraph, 'pPr');
+  paragraph.insertBefore(start, properties ? properties.nextSibling : paragraph.firstChild);
+  paragraph.appendChild(end);
+}
+
+function recordSignature(type, headers, row) {
+  return signature({ type, values: Object.fromEntries(headers.map((header, index) => [header, rowValues(row)[index] || ''])) });
 }
 
 function firstChild(node, name) {
@@ -112,11 +159,12 @@ function setCellText(cell, value) {
   let paragraph = firstChild(cell, 'p');
   if (!paragraph) { paragraph = document.createElement(q('p')); cell.appendChild(paragraph); }
   const paragraphProperties = firstChild(paragraph, 'pPr');
+  const bookmarks = Array.from(paragraph.childNodes || []).filter((node) => node.nodeType === 1 && [q('bookmarkStart'), q('bookmarkEnd')].includes(node.nodeName));
   let styleRunProperties = null;
   const firstRun = Array.from(paragraph.childNodes || []).find((node) => node.nodeType === 1 && node.nodeName === q('r'));
   if (firstRun) styleRunProperties = firstChild(firstRun, 'rPr');
   Array.from(paragraph.childNodes || []).forEach((child) => {
-    if (child !== paragraphProperties) paragraph.removeChild(child);
+    if (child !== paragraphProperties && !bookmarks.includes(child)) paragraph.removeChild(child);
   });
   const run = document.createElement(q('r'));
   if (styleRunProperties) run.appendChild(clone(styleRunProperties));
@@ -128,7 +176,7 @@ function setCellText(cell, value) {
     t.appendChild(document.createTextNode(line));
     run.appendChild(t);
   });
-  paragraph.appendChild(run);
+  paragraph.insertBefore(run, bookmarks.find((node) => node.nodeName === q('bookmarkEnd')) || null);
   Array.from(cell.childNodes || []).forEach((child) => {
     if (child !== firstChild(cell, 'tcPr') && child !== paragraph) cell.removeChild(child);
   });
@@ -226,20 +274,25 @@ async function saveRecords(docPath, records) {
   const xml = await zip.file('word/document.xml').async('string');
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   const grouped = new Map();
+  let skipped = 0;
   for (const record of records) {
     if (!TABLES[record.type] || !record.values || !record.values['日期']) continue;
     const id = record.id || crypto.randomUUID();
     const normalized = { id, type: record.type, values: record.values, date: record.values['日期'] };
     const sig = signature(normalized);
-    if (index.ids[id] || index.signatures[sig]) continue;
+    const existing = index.ids[id];
+    if (existing && existing.type !== record.type) throw new Error('不能修改已保存记录的类型');
+    if (existing?.signature === sig || (index.signatures[sig] && index.signatures[sig] !== id)) { skipped += 1; continue; }
     if (!grouped.has(record.type)) grouped.set(record.type, []);
-    grouped.get(record.type).push(normalized);
+    grouped.get(record.type).push({ ...normalized, previousSignature: existing?.signature || null, previousValues: record.previousValues || null });
+    Object.keys(index.signatures).filter((key) => index.signatures[key] === id).forEach((key) => delete index.signatures[key]);
     index.ids[id] = { type: record.type, signature: sig };
     index.signatures[sig] = id;
   }
-  if (!grouped.size) return { added: 0, skipped: records.length, backup: null, path: resolved };
+  if (!grouped.size) return { added: 0, updated: 0, skipped: records.length, backup: null, path: resolved };
   Array.from(document.getElementsByTagName(q('tbl'))).forEach(normalizeTableOrder);
   let added = 0;
+  let updated = 0;
   for (const [type, incoming] of grouped) {
     const headers = TABLES[type];
     const table = findTable(document, headers);
@@ -251,13 +304,23 @@ async function saveRecords(docPath, records) {
     const placeholders = data.filter((row) => isPlaceholder(rowValues(row)));
     const actual = data.filter((row) => !isPlaceholder(rowValues(row)));
     for (const record of incoming) {
-      let row = placeholders.shift();
-      if (!row) row = clone(actual[actual.length - 1] || data[data.length - 1] || header);
+      let row;
+      if (record.previousSignature) {
+        row = actual.find((candidate) => rowHasRecordId(candidate, record.id))
+          || actual.find((candidate) => recordSignature(type, headers, candidate) === record.previousSignature)
+          || (record.previousValues && actual.find((candidate) => JSON.stringify(rowValues(candidate)) === JSON.stringify(headers.map((field) => record.previousValues[field] || ''))));
+        if (!row) throw new Error(`找不到 Word 中原有的记录（${record.id}），未修改文档`);
+      } else {
+        row = placeholders.shift();
+        if (!row) row = clone(actual[actual.length - 1] || data[data.length - 1] || header);
+        removeRecordBookmark(row);
+      }
       const cells = rowCells(row);
       headers.forEach((field, index) => setCellText(cells[index], record.values[field] || ''));
       clearRowFlag(row, 'cantSplit');
-      actual.push(row);
-      added += 1;
+      ensureRecordBookmark(document, row, record.id);
+      if (record.previousSignature) updated += 1;
+      else { actual.push(row); added += 1; }
     }
     actual.sort((a, b) => (rowValues(a)[0] || '').localeCompare(rowValues(b)[0] || ''));
     replaceRows(table, [header, ...actual, ...placeholders]);
@@ -270,7 +333,7 @@ async function saveRecords(docPath, records) {
   zip.file('word/document.xml', new XMLSerializer().serializeToString(document));
   await writeAtomic(resolved, await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }));
   await writeAtomic(`${resolved}.kk-index.json`, JSON.stringify(index, null, 2));
-  return { added, skipped: records.length - added, backup, path: resolved };
+  return { added, updated, skipped: records.length - added - updated, backup, path: resolved };
 }
 
 async function saveRecord(docPath, record) { return saveRecords(docPath, [record]); }

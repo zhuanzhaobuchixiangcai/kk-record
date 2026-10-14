@@ -27,6 +27,7 @@ const DB_VERSION = 1;
 const STORE = 'records';
 const app = document.querySelector('#app');
 let currentType = '每日或事件记录';
+let editingRecord = null;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -87,14 +88,14 @@ function render() {
       <main class="main">
         <div class="topbar"><strong id="storage-title">本地记录</strong><span class="path" id="storage-path">手机端保存在本地；电脑端可直接写入 Word</span></div>
         <section class="panel">
-          <div class="panel-head"><h2>${escapeHtml(currentType)}</h2><span>保存后可随时导出为 Word</span></div>
+          <div class="panel-head"><h2>${escapeHtml(currentType)}</h2><span id="form-state">保存后可随时导出为 Word</span></div>
           <form class="form" id="record-form">${definition.fields.map(([label, kind, options]) => fieldHtml(label, kind, options)).join('')}</form>
-          <div class="actions"><div class="message" id="message"></div><div class="action-buttons"><button class="button" type="button" id="clear">清空</button><button class="button primary" type="button" id="save">保存记录</button></div></div>
+          <div class="actions"><div class="message" id="message"></div><div class="action-buttons"><button class="button" type="button" id="clear">${editingRecord ? '取消编辑' : '清空'}</button><button class="button primary" type="button" id="save">${editingRecord ? '保存修改' : '保存记录'}</button></div></div>
           <div class="records"><h3>已保存记录</h3><div id="record-list"></div></div>
         </section>
       </main>
     </div>`;
-  document.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => { currentType = button.dataset.type; render(); }));
+  document.querySelectorAll('[data-type]').forEach(button => button.addEventListener('click', () => { editingRecord = null; currentType = button.dataset.type; render(); }));
   document.querySelector('#clear').addEventListener('click', clearForm);
   document.querySelector('#save').addEventListener('click', saveForm);
   document.querySelector('#export').addEventListener('click', exportWord);
@@ -114,18 +115,28 @@ function fieldHtml(label, kind, options) {
 }
 
 function formValues() { return TYPES[currentType].fields.map(([label]) => [label, document.querySelector(`[data-label="${CSS.escape(label)}"]`).value.trim()]); }
-function clearForm() { document.querySelector('#record-form').reset(); document.querySelector('[type=date]').value = today(); }
+function clearForm() {
+  editingRecord = null;
+  document.querySelector('#record-form').reset();
+  document.querySelector('[type=date]').value = today();
+  document.querySelector('#clear').textContent = '清空';
+  document.querySelector('#save').textContent = '保存记录';
+  document.querySelector('#form-state').textContent = '保存后可随时导出为 Word';
+}
 
 async function saveForm() {
   const pairs = formValues();
   const values = Object.fromEntries(pairs);
   const message = document.querySelector('#message');
   if (!values['日期'] || !pairs.slice(1).some(([, value]) => value)) { message.textContent = '请填写日期，并至少填写一项内容。'; message.className = 'message error'; return; }
-  const record = { id: uid(), type: currentType, date: values['日期'], values, updatedAt: new Date().toISOString() };
+  const wasEditing = Boolean(editingRecord);
+  const record = { id: editingRecord?.id || uid(), type: currentType, date: values['日期'], values, updatedAt: new Date().toISOString() };
   try {
-    const result = window.kkDesktop ? await window.kkDesktop.saveRecord(record) : null;
+    const result = window.kkDesktop ? await window.kkDesktop.saveRecord(editingRecord ? { ...record, previousValues: editingRecord.values } : record) : null;
     await putRecord(record);
-    message.textContent = result ? `已直接写入 Word（新增 ${result.added} 条，已备份原文件）。` : '已保存到本地数据库。';
+    message.textContent = result
+      ? `已同步到 Word（新增 ${result.added} 条，更新 ${result.updated} 条，已备份原文件）。`
+      : wasEditing ? '已更新本地记录；导出 JSON 后可在电脑端同步到 Word。' : '已保存到本地数据库。';
     message.className = 'message';
   } catch (error) {
     message.textContent = `保存失败：${error.message || error}`;
@@ -142,8 +153,24 @@ async function loadList() {
   const records = (await allRecords()).filter(record => record.type === currentType).reverse();
   if (!records.length) { list.innerHTML = '<div class="empty">还没有记录。</div>'; return; }
   const headers = TYPES[currentType].headers;
-  list.innerHTML = `<table><thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}<th>操作</th></tr></thead><tbody>${records.map(record => `<tr>${headers.map(header => `<td>${escapeHtml(record.values[header])}</td>`).join('')}<td><button class="button danger" data-delete="${record.id}">删除</button></td></tr>`).join('')}</tbody></table>`;
+  list.innerHTML = `<table><thead><tr>${headers.map(header => `<th>${escapeHtml(header)}</th>`).join('')}<th>操作</th></tr></thead><tbody>${records.map(record => `<tr>${headers.map(header => `<td>${escapeHtml(record.values[header])}</td>`).join('')}<td><div class="record-actions"><button class="button" data-edit="${escapeHtml(record.id)}">编辑</button><button class="button danger" data-delete="${escapeHtml(record.id)}">删除</button></div></td></tr>`).join('')}</tbody></table>`;
+  list.querySelectorAll('[data-edit]').forEach(button => button.addEventListener('click', () => editRecord(button.dataset.edit)));
   list.querySelectorAll('[data-delete]').forEach(button => button.addEventListener('click', async () => { if (confirm('确定删除这条记录吗？')) { await deleteRecord(button.dataset.delete); loadList(); } }));
+}
+
+async function editRecord(id) {
+  const record = (await allRecords()).find(item => item.id === id);
+  if (!record) return;
+  currentType = record.type;
+  editingRecord = record;
+  render();
+  TYPES[currentType].fields.forEach(([label]) => {
+    const field = document.querySelector(`[data-label="${CSS.escape(label)}"]`);
+    if (field) field.value = record.values[label] || '';
+  });
+  document.querySelector('#form-state').textContent = `正在编辑 ${record.values['日期']}`;
+  document.querySelector('#message').textContent = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function paragraph(text, bold = false) { return new Paragraph({ children: [{ text: text || '', bold }], spacing: { after: 80 } }); }
@@ -180,11 +207,16 @@ async function importJson(event) {
   if (!file) return;
   const records = JSON.parse(await file.text());
   const valid = records.filter(record => record.id && record.type && record.values);
+  const existingById = new Map((await allRecords()).map(record => [record.id, record]));
+  const recordsToSync = valid.map(record => {
+    const existing = existingById.get(record.id);
+    return existing ? { ...record, previousValues: existing.values } : record;
+  });
   let result = null;
-  if (window.kkDesktop) result = await window.kkDesktop.mergeRecords(valid);
+  if (window.kkDesktop) result = await window.kkDesktop.mergeRecords(recordsToSync);
   for (const record of valid) await putRecord(record);
   await loadList();
-  document.querySelector('#message').textContent = result ? `JSON 已合并到 Word：新增 ${result.added} 条，跳过 ${result.skipped} 条。` : 'JSON 记录已合并到本地数据库。';
+  document.querySelector('#message').textContent = result ? `JSON 已同步到 Word：新增 ${result.added} 条，更新 ${result.updated} 条，跳过 ${result.skipped} 条。` : 'JSON 记录已合并到本地数据库。';
   event.target.value = '';
 }
 
